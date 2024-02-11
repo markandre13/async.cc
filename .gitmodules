@@ -1,0 +1,3 @@
+[submodule "upstream/kaffeeklatsch"]
+	path = upstream/kaffeeklatsch
+	url = git@github.com:markandre13/kaffeeklatsch.git
