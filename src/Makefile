@@ -4,14 +4,14 @@ APP=tests
 
 CXX=/usr/local/opt/llvm/bin/clang++
 CFLAGS=-std=c++23 $(MEM) -O0 -g \
-	-Wall -Wextra -Wno-deprecated-anon-enum-enum-conversion \
+	-Wall -Wextra -Werror=return-type -Werror=shadow -Wno-deprecated-anon-enum-enum-conversion \
 	-I/usr/local/opt/llvm/include/c++ \
 	-I../upstream/kaffeeklatsch/src
 
 LDFLAGS=-L/usr/local/opt/llvm/lib/c++ -Wl,-rpath,/usr/local/opt/llvm/lib/c++ \
 	-L/usr/local/lib $(MEM) -g
 
-SRC = task.spec.cc ../upstream/kaffeeklatsch/src/kaffeeklatsch.cc
+SRC = async.spec.cc ../upstream/kaffeeklatsch/src/kaffeeklatsch.cc
 
 OBJ = $(SRC:.cc=.o)
 
@@ -38,4 +38,5 @@ $(APP): $(OBJ)
 
 # DO NOT DELETE
 
-task.spec.o: task.hh
+async.spec.o: async.hh
+../upstream/kaffeeklatsch/src/kaffeeklatsch.o: ../upstream/kaffeeklatsch/src/kaffeeklatsch.hh

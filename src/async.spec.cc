@@ -1,24 +1,25 @@
 #define _COROUTINE_DEBUG 1
-#include "task.hh"
+
+#include "async.hh"
 
 #include <kaffeeklatsch.hh>
 using namespace kaffeeklatsch;
 
 using namespace std;
-using namespace cpptask;
+using namespace cppasync;
 
-namespace cpptask {
+namespace cppasync {
 
 #ifdef _COROUTINE_DEBUG
 unsigned promise_sn_counter = 0;
-unsigned task_sn_counter = 0;
+unsigned async_sn_counter = 0;
 unsigned awaitable_sn_counter = 0;
 unsigned promise_use_counter = 0;
-unsigned task_use_counter = 0;
+unsigned async_use_counter = 0;
 unsigned awaitable_use_counter = 0;
 #endif
 
-}  // namespace cpptask
+}  // namespace cppasync
 
 vector<string> logger;
 template <class... Args>
@@ -29,7 +30,7 @@ void log(std::format_string<Args...> fmt, Args &&...args) {
 
 interlock<unsigned, unsigned> my_interlock;
 
-task<const char *> f3() {
+async<const char *> f3() {
     log("f3 enter");
     log("f3 co_await");
     auto v = co_await my_interlock.suspend(10);
@@ -38,7 +39,7 @@ task<const char *> f3() {
     co_return "hello";
 }
 
-task<void> f2() {
+async<void> f2() {
     log("f2 enter");
     auto text = co_await f3();
     log("expect 'hello', got '{}'", text);
@@ -46,7 +47,7 @@ task<void> f2() {
     co_return;
 }
 
-task<double> f1() {
+async<double> f1() {
     log("f1 enter");
     co_await f2();
     log("f1 middle");
@@ -55,7 +56,7 @@ task<double> f1() {
     co_return 3.1415;
 }
 
-task<int> f0() {
+async<int> f0() {
     log("f0 enter");
     double pi = co_await f1();
     log("expect 3.1415, got {}", pi);
@@ -63,7 +64,7 @@ task<int> f0() {
     co_return 10;
 }
 
-task<void> fx(bool wait) {
+async<void> fx(bool wait) {
     log("fx enter");
     if (wait) {
         log("fx co_await");
@@ -74,38 +75,38 @@ task<void> fx(bool wait) {
     co_return;
 }
 
-task<void> wait() { co_await std::suspend_always(); }
-task<void> no_wait() { co_return; }
+async<void> wait() { co_await std::suspend_always(); }
+async<void> no_wait() { co_return; }
 
-task<void> no_wait_void() { co_return; }
-task<unsigned> no_wait_unsigned(unsigned value) { co_return value; }
+async<void> no_wait_void() { co_return; }
+async<unsigned> no_wait_unsigned(unsigned value) { co_return value; }
 
-task<void> no_wait_void_throw() {
+async<void> no_wait_void_throw() {
     throw runtime_error("yikes");
     co_return;
 }
-task<unsigned> no_wait_unsigned_throw(unsigned value) {
+async<unsigned> no_wait_unsigned_throw(unsigned value) {
     throw runtime_error(format("yikes {}", value));
     co_return value;
 }
 
-task<void> wait_void(unsigned id) {
+async<void> wait_void(unsigned id) {
     co_await my_interlock.suspend(id);
     co_return;
 }
-task<unsigned> wait_unsigned(unsigned id) {
+async<unsigned> wait_unsigned(unsigned id) {
     auto v = co_await my_interlock.suspend(id);
     co_return v;
 }
 
-task<void> wait_void_throw(unsigned id) {
+async<void> wait_void_throw(unsigned id) {
     println("wait_void_throw(): suspend");
     auto v = co_await my_interlock.suspend(id);
     println("wait_void_throw(): resume and throw");
     throw std::runtime_error(std::format("yikes {}", v));
     co_return;
 }
-task<unsigned> wait_unsigned_throw(unsigned id) {
+async<unsigned> wait_unsigned_throw(unsigned id) {
     auto v = co_await my_interlock.suspend(id);
     throw std::runtime_error(std::format("yikes {}", v));
     co_return v;
@@ -113,12 +114,12 @@ task<unsigned> wait_unsigned_throw(unsigned id) {
 
 unsigned global_value;
 unsigned &global_value_ref = global_value;
-task<unsigned &> wait_unsigned_ref(unsigned id) {
+async<unsigned &> wait_unsigned_ref(unsigned id) {
     global_value = co_await my_interlock.suspend(id);
     co_return global_value_ref;
 }
 
-task<void> fy(bool wait) {
+async<void> fy(bool wait) {
     log("fy enter");
     co_await fx(wait);
     log("fy leave");
@@ -137,9 +138,9 @@ kaffeeklatsch_spec([] {
         });
         // TODO: kaffeeklatsch doesn't run beforeEach & afterEach as part of the
         // test yet. afterEach([] {
-        //     expect(cpptask::task_use_counter).to.equal(0);
-        //     expect(cpptask::promise_use_counter).to.equal(0);
-        //     expect(cpptask::awaitable_use_counter).to.equal(0);
+        //     expect(cppasync::async_use_counter).to.equal(0);
+        //     expect(cppasync::promise_use_counter).to.equal(0);
+        //     expect(cppasync::awaitable_use_counter).to.equal(0);
         // });
         it("handles single method, no suspend", [] {
             { fx(false).no_wait(); }
@@ -147,9 +148,9 @@ kaffeeklatsch_spec([] {
                 "fx enter",
                 "fx leave",
             });
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(0);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
 
         it("handles single method, one suspend", [] {
@@ -163,9 +164,9 @@ kaffeeklatsch_spec([] {
                 "fx co_await got 2001",
                 "fx leave",
             });
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(0);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
 
         it("handles two nested methods, no suspend", [] {
@@ -178,17 +179,17 @@ kaffeeklatsch_spec([] {
             // }
             // println("==========================================");
             expect(logger).to.equal(vector<string>{"fy enter", "fx enter", "fx co_await", "resume", "fx co_await got 2001", "fx leave", "fy leave"});
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(0);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
 
         it("handles two nested methods, with suspend", [] {
             { fy(false).no_wait(); }
             expect(logger).to.equal(vector<string>{"fy enter", "fx enter", "fx leave", "fy leave"});
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(0);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
 
         it("handles many nested methods and two suspends", [] {
@@ -227,34 +228,34 @@ kaffeeklatsch_spec([] {
                                           "expect 3.1415, got 3.1415",
                                           "f0 leave"}};
             expect(logger).equals(expect);
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(0);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
     });
     describe("calling from sync", [] {
-        it("destroying a finished task will not throw", [] {
-            { auto task = no_wait(); }
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+        it("destroying a finished async will not throw", [] {
+            { auto async = no_wait(); }
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(0);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
-        it("destroying an unfinished task will throw an unfinished_promise exception", [] {
+        it("destroying an unfinished async will throw an unfinished_promise exception", [] {
             expect([] {
-                { auto task = wait(); }
+                { auto async = wait(); }
             }).to.throw_(unfinished_promise());
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(0);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
-        it("destroying a unfinished task will not throw when uncoupled", [] {
+        it("destroying a unfinished async will not throw when uncoupled", [] {
             {
-                auto task = wait();
-                task.no_wait();
+                auto async = wait();
+                async.no_wait();
             }
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(1);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            expect(cppasync::async_use_counter).to.equal(0);
+            expect(cppasync::promise_use_counter).to.equal(1);
+            expect(cppasync::awaitable_use_counter).to.equal(0);
         });
     });
     describe("then(...)", [] {
@@ -272,9 +273,9 @@ kaffeeklatsch_spec([] {
                 my_interlock.resume(10, 20);
                 expect(thenExecuted).to.beTrue();
                 expect(out).to.equal(20);
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             it("void", [] {
                 bool thenExecuted = false;
@@ -286,9 +287,9 @@ kaffeeklatsch_spec([] {
                 expect(thenExecuted).to.beFalse();
                 my_interlock.resume(10, 20);
                 expect(thenExecuted).to.beTrue();
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             xit("T&", [] {});
         });
@@ -304,9 +305,9 @@ kaffeeklatsch_spec([] {
                 }
                 expect(thenExecuted).to.beTrue();
                 expect(out).to.equal(10);
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             it("void", [] {
                 bool thenExecuted = false;
@@ -316,9 +317,9 @@ kaffeeklatsch_spec([] {
                     });
                 }
                 expect(thenExecuted).to.beTrue();
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             xit("T&", [] {});
         });
@@ -346,9 +347,9 @@ kaffeeklatsch_spec([] {
                 expect(thenExecuted).to.beFalse();
                 expect(failExecuted).to.beTrue();
                 expect(out).to.equal("yikes 20");
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             it("void", [] {
                 bool thenExecuted = false;
@@ -370,9 +371,9 @@ kaffeeklatsch_spec([] {
                 expect(thenExecuted).to.beFalse();
                 expect(failExecuted).to.beTrue();
                 expect(out).to.equal("yikes 20");
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             xit("T&", [] {});
         });
@@ -394,9 +395,9 @@ kaffeeklatsch_spec([] {
                 expect(thenExecuted).to.beFalse();
                 expect(failExecuted).to.beTrue();
                 expect(out).to.equal("yikes 10");
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             it("void", [] {
                 bool thenExecuted = false;
@@ -415,9 +416,9 @@ kaffeeklatsch_spec([] {
                 expect(thenExecuted).to.beFalse();
                 expect(failExecuted).to.beTrue();
                 expect(out).to.equal("yikes");
-                expect(cpptask::task_use_counter).to.equal(0);
-                expect(cpptask::promise_use_counter).to.equal(0);
-                expect(cpptask::awaitable_use_counter).to.equal(0);
+                expect(cppasync::async_use_counter).to.equal(0);
+                expect(cppasync::promise_use_counter).to.equal(0);
+                expect(cppasync::awaitable_use_counter).to.equal(0);
             });
             xit("T&", [] {});
         });

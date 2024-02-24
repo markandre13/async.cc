@@ -8,10 +8,10 @@
 #include <print>
 #include <stdexcept>
 
-namespace cpptask {
+namespace cppasync {
 
 template <typename T>
-class task;
+class async;
 
 class broken_promise : public std::logic_error {
     public:
@@ -36,21 +36,21 @@ class unfinished_promise : public std::logic_error {
 
 #ifdef _COROUTINE_DEBUG
 extern unsigned promise_sn_counter;
-extern unsigned task_sn_counter;
+extern unsigned async_sn_counter;
 extern unsigned awaitable_sn_counter;
 extern unsigned promise_use_counter;
-extern unsigned task_use_counter;
+extern unsigned async_use_counter;
 extern unsigned awaitable_use_counter;
 extern std::coroutine_handle<> global_continuation;
 unsigned getSNforHandle(std::coroutine_handle<> handle);
 inline void resetCounters() {
-    promise_sn_counter = task_sn_counter = awaitable_sn_counter = promise_use_counter = task_use_counter = awaitable_use_counter = 0;
+    promise_sn_counter = async_sn_counter = awaitable_sn_counter = promise_use_counter = async_use_counter = awaitable_use_counter = 0;
 }
 #endif
 
 namespace detail {
 
-class task_promise_base {
+class async_promise_base {
         std::coroutine_handle<> m_parent;
         struct final_awaitable {
 #ifdef _COROUTINE_DEBUG
@@ -78,8 +78,8 @@ class task_promise_base {
                         std::println("final_awaitable #{}: await_suspend() -> done, consider destroying promise #{}", sn, getSNforHandle(coro));
 #endif
                         // this is the right location to destroy coro but "if (!continuation)" can't be used as the parent
-                        // is set later... maybe either task must deleted it when there never was a suspend or when the
-                        // associated task had an no_wait() call, then the promise was marked for deletion and it's being
+                        // is set later... maybe either async must deleted it when there never was a suspend or when the
+                        // associated async had an no_wait() call, then the promise was marked for deletion and it's being
                         // deleted here?
                         if (coro.promise().drop && coro.done()) {
                             coro.destroy();
@@ -104,17 +104,17 @@ class task_promise_base {
         const std::function<void(std::exception& error)>* fail = nullptr;
 #ifdef _COROUTINE_DEBUG
         unsigned sn;
-        task_promise_base() noexcept {
+        async_promise_base() noexcept {
             ++promise_use_counter;
             sn = ++promise_sn_counter;
-            // std::println("  create task_promise_base #{}", sn);
+            // std::println("  create async_promise_base #{}", sn);
         }
-        ~task_promise_base() {
+        ~async_promise_base() {
             --promise_use_counter;
             std::println("promise #{}: destroyed", sn);
         }
 #else
-        task_promise_base() noexcept {}
+        async_promise_base() noexcept {}
 #endif
 
         // set the coroutine to proceed with after this coroutine is finished
@@ -134,17 +134,17 @@ class task_promise_base {
 }  // namespace detail
 
 #ifdef _COROUTINE_DEBUG
-inline unsigned getSNforHandle(std::coroutine_handle<> handle) { return ((std::coroutine_handle<detail::task_promise_base>*)&handle)->promise().sn; }
+inline unsigned getSNforHandle(std::coroutine_handle<> handle) { return ((std::coroutine_handle<detail::async_promise_base>*)&handle)->promise().sn; }
 #endif
 
 namespace detail {
 
-// the VALUE specialisation of task_promise_base
+// the VALUE specialisation of async_promise_base
 template <typename T>
-class task_promise final : public task_promise_base {
+class async_promise final : public async_promise_base {
     public:
-        task_promise() noexcept {}
-        ~task_promise() {
+        async_promise() noexcept {}
+        ~async_promise() {
             switch (m_resultType) {
                 case result_type::value:
                     if (then != nullptr) {
@@ -167,7 +167,7 @@ class task_promise final : public task_promise_base {
                     break;
             }
         }
-        task<T> get_return_object() noexcept;
+        async<T> get_return_object() noexcept;
         void unhandled_exception() noexcept {
             ::new (static_cast<void*>(std::addressof(m_exception))) std::exception_ptr(std::current_exception());
             m_resultType = result_type::exception;
@@ -207,16 +207,16 @@ class task_promise final : public task_promise_base {
         };
 };
 
-// the VOID specialisation of task_promise_base
+// the VOID specialisation of async_promise_base
 template <>
-class task_promise<void> : public task_promise_base {
+class async_promise<void> : public async_promise_base {
     public:
-        task_promise() noexcept {
+        async_promise() noexcept {
 #ifdef _COROUTINE_DEBUG
-            // std::println("  create task_promise<> #{}", sn);
+            // std::println("  create async_promise<> #{}", sn);
 #endif
         }
-        ~task_promise() {
+        ~async_promise() {
             if (m_exception) {
                 if (fail != nullptr) {
                     try {
@@ -232,7 +232,7 @@ class task_promise<void> : public task_promise_base {
                 }
             }
         }
-        task<void> get_return_object() noexcept;
+        async<void> get_return_object() noexcept;
         void return_void() noexcept {
 #ifdef _COROUTINE_DEBUG
             std::println("promise #{}: return_void()", sn);
@@ -254,17 +254,17 @@ class task_promise<void> : public task_promise_base {
         std::exception_ptr m_exception;
 };
 
-// the REFERENCE specialisation of task_promise_base
+// the REFERENCE specialisation of async_promise_base
 template <typename T>
-class task_promise<T&> : public task_promise_base {
+class async_promise<T&> : public async_promise_base {
     public:
-        task_promise() noexcept = default;
-        ~task_promise() {
+        async_promise() noexcept = default;
+        ~async_promise() {
             // if (then != nullptr) {
             //     (*then)(m_value);
             // }
         }
-        task<T&> get_return_object() noexcept;
+        async<T&> get_return_object() noexcept;
         void unhandled_exception() noexcept { m_exception = std::current_exception(); }
         void return_value(T& value) noexcept { m_value = std::addressof(value); }
         T& result() {
@@ -282,9 +282,9 @@ class task_promise<T&> : public task_promise_base {
 }  // namespace detail
 
 template <typename T>
-class [[nodiscard]] task {
+class [[nodiscard]] async {
     public:
-        using promise_type = detail::task_promise<T>;
+        using promise_type = detail::async_promise<T>;
         using handle_type = std::coroutine_handle<promise_type>;
         using value_type = T;
 
@@ -324,44 +324,44 @@ class [[nodiscard]] task {
         };
 
     public:
-        task() noexcept : m_coroutine(nullptr) {
+        async() noexcept : m_coroutine(nullptr) {
 #ifdef _COROUTINE_DEBUG
-            ++task_use_counter;
-            sn = ++task_sn_counter;
-            // std::println("  create task<>() #{}", sn);
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>() #{}", sn);
 #endif
         }
-        explicit task(handle_type coroutine) : m_coroutine(coroutine) {
+        explicit async(handle_type coroutine) : m_coroutine(coroutine) {
 #ifdef _COROUTINE_DEBUG
-            ++task_use_counter;
-            sn = ++task_sn_counter;
-            // std::println("  create task<>(coroutine) #{}", sn);
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>(coroutine) #{}", sn);
 #endif
         }
-        task(task&& t) noexcept : m_coroutine(t.m_coroutine) {
+        async(async&& t) noexcept : m_coroutine(t.m_coroutine) {
 #ifdef _COROUTINE_DEBUG
-            ++task_use_counter;
-            sn = ++task_sn_counter;
-            // std::println("  create task<>()&& #{} from #{}", sn, t.sn);
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>()&& #{} from #{}", sn, t.sn);
 #endif
             t.m_coroutine = nullptr;
         }
 
     private:
-        task(const task&) = delete;
-        task& operator=(const task&) = delete;
+        async(const async&) = delete;
+        async& operator=(const async&) = delete;
 
     public:
-        ~task() noexcept(false) {
+        ~async() noexcept(false) {
 #ifdef _COROUTINE_DEBUG
-            --task_use_counter;
+            --async_use_counter;
             if (m_coroutine) {
-                std::println("task #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
+                std::println("async #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
                 if (!m_coroutine.done()) {
-                    std::println("task #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
+                    std::println("async #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
                 }
             } else {
-                std::println("task #{} destroyed, no promise to destroy", sn);
+                std::println("async #{} destroyed, no promise to destroy", sn);
             }
 #endif
             if (m_coroutine) {
@@ -373,7 +373,7 @@ class [[nodiscard]] task {
             }
         }
 
-        task& operator=(task&& other) noexcept {
+        async& operator=(async&& other) noexcept {
             if (std::addressof(other) != this) {
                 if (m_coroutine) {
                     m_coroutine.destroy();
@@ -400,7 +400,7 @@ class [[nodiscard]] task {
             };
 #ifdef _COROUTINE_DEBUG
             auto asn = ++awaitable_sn_counter;
-            std::println("task #{} co_await&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
+            std::println("async #{} co_await&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
             return awaitable{m_coroutine, asn};
 #else
             return awaitable{m_coroutine};
@@ -422,7 +422,7 @@ class [[nodiscard]] task {
             };
 #ifdef _COROUTINE_DEBUG
             auto asn = ++awaitable_sn_counter;
-            std::println("task #{} co_await&&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
+            std::println("async #{} co_await&&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
             return awaitable{m_coroutine, asn};
 #else
             return awaitable{m_coroutine};
@@ -434,7 +434,7 @@ class [[nodiscard]] task {
                 m_coroutine = nullptr;
             }
         }
-        task<T>& then(const std::function<void(T response)>& callback) {
+        async<T>& then(const std::function<void(T response)>& callback) {
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
                     m_coroutine.promise().then = &callback;
@@ -446,11 +446,11 @@ class [[nodiscard]] task {
             }
             return *this;
         }
-        task<T>& thenOrCatch(const std::function<void(T response)>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+        async<T>& thenOrCatch(const std::function<void(T response)>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
 #ifdef _COROUTINE_DEBUG
-                    std::println("task<T>::thenOrCatch(): decouple from promise and set fail callback");
+                    std::println("async<T>::thenOrCatch(): decouple from promise and set fail callback");
 #endif
                     m_coroutine.promise().then = &response_cb;
                     m_coroutine.promise().fail = &exception_cb;
@@ -458,7 +458,7 @@ class [[nodiscard]] task {
                     m_coroutine = nullptr;
                 } else {
 #ifdef _COROUTINE_DEBUG
-                    std::println("task<T>::thenOrCatch(): run ");
+                    std::println("async<T>::thenOrCatch(): run ");
 #endif
                     try {
                         response_cb(m_coroutine.promise().result());
@@ -468,7 +468,7 @@ class [[nodiscard]] task {
                 }
 #ifdef _COROUTINE_DEBUG
             } else {
-                std::println("task<T>::thenOrCatch(): no coroutine");
+                std::println("async<T>::thenOrCatch(): no coroutine");
 #endif
             }
             return *this;
@@ -476,9 +476,9 @@ class [[nodiscard]] task {
 };
 
 template <>
-class [[nodiscard]] task<void> {
+class [[nodiscard]] async<void> {
     public:
-        using promise_type = detail::task_promise<void>;
+        using promise_type = detail::async_promise<void>;
         using handle_type = std::coroutine_handle<promise_type>;
 
     private:
@@ -517,44 +517,44 @@ class [[nodiscard]] task<void> {
         };
 
     public:
-        task() noexcept : m_coroutine(nullptr) {
+        async() noexcept : m_coroutine(nullptr) {
 #ifdef _COROUTINE_DEBUG
-            ++task_use_counter;
-            sn = ++task_sn_counter;
-            // std::println("  create task<>() #{}", sn);
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>() #{}", sn);
 #endif
         }
-        explicit task(handle_type coroutine) : m_coroutine(coroutine) {
+        explicit async(handle_type coroutine) : m_coroutine(coroutine) {
 #ifdef _COROUTINE_DEBUG
-            ++task_use_counter;
-            sn = ++task_sn_counter;
-            // std::println("  create task<>(coroutine) #{}", sn);
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>(coroutine) #{}", sn);
 #endif
         }
-        task(task&& t) noexcept : m_coroutine(t.m_coroutine) {
+        async(async&& t) noexcept : m_coroutine(t.m_coroutine) {
 #ifdef _COROUTINE_DEBUG
-            ++task_use_counter;
-            sn = ++task_sn_counter;
-            // std::println("  create task<>()&& #{} from #{}", sn, t.sn);
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>()&& #{} from #{}", sn, t.sn);
 #endif
             t.m_coroutine = nullptr;
         }
 
     private:
-        task(const task&) = delete;
-        task& operator=(const task&) = delete;
+        async(const async&) = delete;
+        async& operator=(const async&) = delete;
 
     public:
-        ~task() noexcept(false) {
+        ~async() noexcept(false) {
 #ifdef _COROUTINE_DEBUG
-            --task_use_counter;
+            --async_use_counter;
             if (m_coroutine) {
-                std::println("task #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
+                std::println("async #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
                 if (!m_coroutine.done()) {
-                    std::println("task #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
+                    std::println("async #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
                 }
             } else {
-                std::println("task #{} destroyed, no promise to destroy", sn);
+                std::println("async #{} destroyed, no promise to destroy", sn);
             }
 #endif
             if (m_coroutine) {
@@ -569,7 +569,7 @@ class [[nodiscard]] task<void> {
             }
         }
 
-        task& operator=(task&& other) noexcept {
+        async& operator=(async&& other) noexcept {
             if (std::addressof(other) != this) {
                 if (m_coroutine) {
                     m_coroutine.destroy();
@@ -596,7 +596,7 @@ class [[nodiscard]] task<void> {
             };
 #ifdef _COROUTINE_DEBUG
             auto asn = ++awaitable_sn_counter;
-            std::println("task #{} co_await&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
+            std::println("async #{} co_await&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
             return awaitable{m_coroutine, asn};
 #else
             return awaitable{m_coroutine};
@@ -618,7 +618,7 @@ class [[nodiscard]] task<void> {
             };
 #ifdef _COROUTINE_DEBUG
             auto asn = ++awaitable_sn_counter;
-            std::println("task #{} co_await&&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
+            std::println("async #{} co_await&&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
             return awaitable{m_coroutine, asn};
 #else
             return awaitable{m_coroutine};
@@ -630,7 +630,7 @@ class [[nodiscard]] task<void> {
                 m_coroutine = nullptr;
             }
         }
-        task<void>& then(const std::function<void()>& callback) {
+        async<void>& then(const std::function<void()>& callback) {
             if (!m_coroutine.done()) {
                 m_coroutine.promise().drop = true;
                 m_coroutine.promise().then = &callback;
@@ -640,11 +640,11 @@ class [[nodiscard]] task<void> {
             }
             return *this;
         }
-        task<void>& thenOrCatch(const std::function<void()>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+        async<void>& thenOrCatch(const std::function<void()>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
 #ifdef _COROUTINE_DEBUG
-                    std::println("task<void>::thenOrCatch(): decouple from promise #{} and set fail callback", getSNforHandle(m_coroutine));
+                    std::println("async<void>::thenOrCatch(): decouple from promise #{} and set fail callback", getSNforHandle(m_coroutine));
 #endif
                     m_coroutine.promise().then = &response_cb;
                     m_coroutine.promise().fail = &exception_cb;
@@ -652,7 +652,7 @@ class [[nodiscard]] task<void> {
                     m_coroutine = nullptr;
                 } else {
 #ifdef _COROUTINE_DEBUG
-                    std::println("task<void>::thenOrCatch(): run ");
+                    std::println("async<void>::thenOrCatch(): run ");
 #endif
                     try {
                         m_coroutine.promise().result();
@@ -663,7 +663,7 @@ class [[nodiscard]] task<void> {
                 }
 #ifdef _COROUTINE_DEBUG
             } else {
-                std::println("task<void>::thenOrCatch(): no coroutine");
+                std::println("async<void>::thenOrCatch(): no coroutine");
 #endif
             }
             return *this;
@@ -673,27 +673,27 @@ class [[nodiscard]] task<void> {
 namespace detail {
 
 template <typename T>
-task<T> task_promise<T>::get_return_object() noexcept {
-    auto t = task<T>{std::coroutine_handle<task_promise>::from_promise(*this)};
+async<T> async_promise<T>::get_return_object() noexcept {
+    auto t = async<T>{std::coroutine_handle<async_promise>::from_promise(*this)};
 #ifdef _COROUTINE_DEBUG
-    std::println("before entering function: created task<T> #{} with promise #{}", t.sn, sn);
+    std::println("before entering function: created async<T> #{} with promise #{}", t.sn, sn);
 #endif
     return t;
 }
 
-inline task<void> task_promise<void>::get_return_object() noexcept {
-    auto t = task<void>{std::coroutine_handle<task_promise>::from_promise(*this)};
+inline async<void> async_promise<void>::get_return_object() noexcept {
+    auto t = async<void>{std::coroutine_handle<async_promise>::from_promise(*this)};
 #ifdef _COROUTINE_DEBUG
-    std::println("before entering function: created task<void> #{} with promise #{}", t.sn, sn);
+    std::println("before entering function: created async<void> #{} with promise #{}", t.sn, sn);
 #endif
     return t;
 }
 
 template <typename T>
-task<T&> task_promise<T&>::get_return_object() noexcept {
-    auto t = task<T&>{std::coroutine_handle<task_promise>::from_promise(*this)};
+async<T&> async_promise<T&>::get_return_object() noexcept {
+    auto t = async<T&>{std::coroutine_handle<async_promise>::from_promise(*this)};
 #ifdef _COROUTINE_DEBUG
-    std::println("before entering function: created task<T&> #{} with promise #{}", t.sn, sn);
+    std::println("before entering function: created async<T&> #{} with promise #{}", t.sn, sn);
 #endif
     return t;
 }
@@ -708,19 +708,19 @@ class interlock {
                 awaiter(K id, interlock* _this) : id(id), _this(_this) {}
                 bool await_ready() const noexcept { return false; }
                 template <typename T>
-                bool await_suspend(std::coroutine_handle<detail::task_promise<T>> awaitingCoroutine) noexcept {
+                bool await_suspend(std::coroutine_handle<detail::async_promise<T>> awaitingCoroutine) noexcept {
 #ifdef _COROUTINE_DEBUG
                     std::println("interlock::awaitable::await_suspend()");
 #endif
-                    _this->suspended[id] = *((std::coroutine_handle<detail::task_promise_base>*)&awaitingCoroutine);
+                    _this->m_suspended[id] = *((std::coroutine_handle<detail::async_promise_base>*)&awaitingCoroutine);
                     return true;
                 }
                 V await_resume() {
 #ifdef _COROUTINE_DEBUG
                     std::println("interlock::awaitable::await_resume() return result");
 #endif
-                    auto it = _this->result.find(id);
-                    if (it == _this->result.end()) {
+                    auto it = _this->m_result.find(id);
+                    if (it == _this->m_result.end()) {
                         throw broken_resume("broken resume: did not find value");
                     }
                     return it->second;
@@ -732,20 +732,20 @@ class interlock {
         };
 
         // TODO: use only one map
-        std::map<K, std::coroutine_handle<detail::task_promise_base>> suspended;
-        std::map<K, V> result;
+        std::map<K, std::coroutine_handle<detail::async_promise_base>> m_suspended;
+        std::map<K, V> m_result;
 
     public:
         auto suspend(K id) { return awaiter{id, this}; }
         void resume(K id, V result) {
-            auto it = suspended.find(id);
-            if (it == suspended.end()) {
-                throw broken_resume("broken resume: did not find task");
+            auto it = m_suspended.find(id);
+            if (it == m_suspended.end()) {
+                throw broken_resume("broken resume: did not find async");
             }
             auto continuation = it->second;
-            suspended.erase(it);
+            m_suspended.erase(it);
             if (!continuation.done()) {
-                this->result[id] = result;
+                this->m_result[id] = result;
 #ifdef _COROUTINE_DEBUG
                 std::println("interlock::resume() -> resume promise #{}", getSNforHandle(continuation));
 #endif
@@ -754,4 +754,4 @@ class interlock {
         }
 };
 
-}  // namespace cpptask
+}  // namespace cppasync

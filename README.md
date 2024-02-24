@@ -1,4 +1,4 @@
-# cpptask
+# cppasync
 
 a lightweight c++20 coroutine task class
 
@@ -9,17 +9,17 @@ while c++20/23 coroutines provide a lot of freedom to accommodate many different
 
 a lot of examples on the web do use a class named 'task' along with coroutines, but it's actually not part of the c++ standard. my guess that it's a reference to the cppcoro library.
 
-this file contains a variation of cppcoro's 'task' class and tweaks it to be usable without the rest of the cppcoro library.
+this file contains a variation of cppcoro's 'task' class called 'async' and tweaks it to be usable without the rest of the cppcoro library.
 
- ### class task
+ ### class async
 
-_task_ is the class to be returned from coroutines.
+_async_ is the class to be returned from coroutines.
 
 it is basically a copy of https://github.com/andreasbuhr/cppcoro's task with two changes:
 
 * while one can call a coroutine from other coroutines like this
   ```c++
-  task<> fun0() {
+  async<> fun0() {
     co_await fun1();
   }
   ```
@@ -51,8 +51,8 @@ resumes it along with providing a value.
 
 ### TODO
 
-- [ ] for the full 'javascript' experience, add then() and catch() methods to 'task'
+- [x] for the full 'javascript' experience, add then() and catch() variants to 'async'
 - [ ] try to move the 'return !m_coroutine.done();' from awaitable_base from
      await_suspend() into await_ready() to improve performance.
 - [ ] test exception handling
-- [ ] task<T&> not yet included in tests
+- [ ] async<T&> not yet included in tests
