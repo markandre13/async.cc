@@ -4,8 +4,6 @@
 #include <kaffeeklatsch.hh>
 using namespace kaffeeklatsch;
 
-import std;
-
 using namespace std;
 using namespace cpptask;
 
@@ -76,20 +74,43 @@ task<void> fx(bool wait) {
     co_return;
 }
 
+task<void> wait() { co_await std::suspend_always(); }
 task<void> no_wait() { co_return; }
 
+task<void> no_wait_void() { co_return; }
 task<unsigned> no_wait_unsigned(unsigned value) { co_return value; }
 
-task<void> wait() { co_await std::suspend_always(); }
-
-task<unsigned> wait_unsigned(unsigned id) {
-    auto v = co_await my_interlock.suspend(id);
-    co_return v;
+task<void> no_wait_void_throw() {
+    throw runtime_error("yikes");
+    co_return;
 }
+task<unsigned> no_wait_unsigned_throw(unsigned value) {
+    throw runtime_error(format("yikes {}", value));
+    co_return value;
+}
+
 task<void> wait_void(unsigned id) {
     co_await my_interlock.suspend(id);
     co_return;
 }
+task<unsigned> wait_unsigned(unsigned id) {
+    auto v = co_await my_interlock.suspend(id);
+    co_return v;
+}
+
+task<void> wait_void_throw(unsigned id) {
+    println("wait_void_throw(): suspend");
+    auto v = co_await my_interlock.suspend(id);
+    println("wait_void_throw(): resume and throw");
+    throw std::runtime_error(std::format("yikes {}", v));
+    co_return;
+}
+task<unsigned> wait_unsigned_throw(unsigned id) {
+    auto v = co_await my_interlock.suspend(id);
+    throw std::runtime_error(std::format("yikes {}", v));
+    co_return v;
+}
+
 unsigned global_value;
 unsigned &global_value_ref = global_value;
 task<unsigned &> wait_unsigned_ref(unsigned id) {
@@ -295,6 +316,105 @@ kaffeeklatsch_spec([] {
                     });
                 }
                 expect(thenExecuted).to.beTrue();
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
+            });
+            xit("T&", [] {});
+        });
+    });
+    describe("thenOrCatch(..., ...)", [] {
+        describe("will be executed after the co_await", [] {
+            it("T", [] {
+                bool thenExecuted = false;
+                bool failExecuted = false;
+                string out;
+                {
+                    wait_unsigned_throw(10).thenOrCatch(
+                        [&](unsigned) {
+                            thenExecuted = true;
+                        },
+                        [&](std::exception &error) {
+                            failExecuted = true;
+                            out = error.what();
+                        });
+                }
+                expect(thenExecuted).to.beFalse();
+                expect(failExecuted).to.beFalse();
+
+                my_interlock.resume(10, 20);
+                expect(thenExecuted).to.beFalse();
+                expect(failExecuted).to.beTrue();
+                expect(out).to.equal("yikes 20");
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
+            });
+            it("void", [] {
+                bool thenExecuted = false;
+                bool failExecuted = false;
+                string out;
+                {
+                    wait_void_throw(10).thenOrCatch(
+                        [&]() {
+                            thenExecuted = true;
+                        },
+                        [&](std::exception &error) {
+                            failExecuted = true;
+                            out = error.what();
+                        });
+                }
+                expect(thenExecuted).to.beFalse();
+                expect(failExecuted).to.beFalse();
+                my_interlock.resume(10, 20);
+                expect(thenExecuted).to.beFalse();
+                expect(failExecuted).to.beTrue();
+                expect(out).to.equal("yikes 20");
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
+            });
+            xit("T&", [] {});
+        });
+        describe("will be executed when there was no co_await", [] {
+            it("T", [] {
+                bool thenExecuted = false;
+                bool failExecuted = false;
+                string out;
+                {
+                    no_wait_unsigned_throw(10).thenOrCatch(
+                        [&](unsigned) {
+                            thenExecuted = true;
+                        },
+                        [&](std::exception &error) {
+                            failExecuted = true;
+                            out = error.what();
+                        });
+                }
+                expect(thenExecuted).to.beFalse();
+                expect(failExecuted).to.beTrue();
+                expect(out).to.equal("yikes 10");
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
+            });
+            it("void", [] {
+                bool thenExecuted = false;
+                bool failExecuted = false;
+                string out;
+                {
+                    no_wait_void_throw().thenOrCatch(
+                        [&]() {
+                            thenExecuted = true;
+                        },
+                        [&](std::exception &error) {
+                            failExecuted = true;
+                            out = error.what();
+                        });
+                }
+                expect(thenExecuted).to.beFalse();
+                expect(failExecuted).to.beTrue();
+                expect(out).to.equal("yikes");
                 expect(cpptask::task_use_counter).to.equal(0);
                 expect(cpptask::promise_use_counter).to.equal(0);
                 expect(cpptask::awaitable_use_counter).to.equal(0);

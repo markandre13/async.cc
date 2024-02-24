@@ -101,6 +101,7 @@ class task_promise_base {
 
     public:
         bool drop = false;
+        const std::function<void(std::exception& error)>* fail = nullptr;
 #ifdef _COROUTINE_DEBUG
         unsigned sn;
         task_promise_base() noexcept {
@@ -144,14 +145,22 @@ class task_promise final : public task_promise_base {
     public:
         task_promise() noexcept {}
         ~task_promise() {
-            if (then != nullptr) {
-                (*then)(m_value);
-            }
             switch (m_resultType) {
                 case result_type::value:
+                    if (then != nullptr) {
+                        (*then)(m_value);
+                    }
                     m_value.~T();
                     break;
                 case result_type::exception:
+                    if (fail != nullptr) {
+                        try {
+                            std::rethrow_exception(m_exception);
+                        } catch (std::exception& e) {
+                            (*fail)(e);
+                        } catch (...) {
+                        }
+                    }
                     m_exception.~exception_ptr();
                     break;
                 default:
@@ -204,12 +213,23 @@ class task_promise<void> : public task_promise_base {
     public:
         task_promise() noexcept {
 #ifdef _COROUTINE_DEBUG
-        // std::println("  create task_promise<> #{}", sn);
+            // std::println("  create task_promise<> #{}", sn);
 #endif
         }
         ~task_promise() {
-            if (then != nullptr) {
-                (*then)();
+            if (m_exception) {
+                if (fail != nullptr) {
+                    try {
+                        std::rethrow_exception(m_exception);
+                    } catch (std::exception& e) {
+                        (*fail)(e);
+                    } catch (...) {
+                    }
+                }
+            } else {
+                if (then != nullptr) {
+                    (*then)();
+                }
             }
         }
         task<void> get_return_object() noexcept;
@@ -414,14 +434,42 @@ class [[nodiscard]] task {
                 m_coroutine = nullptr;
             }
         }
-
         task<T>& then(const std::function<void(T response)>& callback) {
-            if (!m_coroutine.done()) {
-                m_coroutine.promise().drop = true;
-                m_coroutine.promise().then = &callback;
-                m_coroutine = nullptr;
+            if (m_coroutine) {
+                if (!m_coroutine.done()) {
+                    m_coroutine.promise().then = &callback;
+                    m_coroutine.promise().drop = true;
+                    m_coroutine = nullptr;
+                } else {
+                    callback(m_coroutine.promise().result());  // THIS THROWS!!!
+                }
+            }
+            return *this;
+        }
+        task<T>& thenOrCatch(const std::function<void(T response)>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+            if (m_coroutine) {
+                if (!m_coroutine.done()) {
+#ifdef _COROUTINE_DEBUG
+                    std::println("task<T>::thenOrCatch(): decouple from promise and set fail callback");
+#endif
+                    m_coroutine.promise().then = &response_cb;
+                    m_coroutine.promise().fail = &exception_cb;
+                    m_coroutine.promise().drop = true;
+                    m_coroutine = nullptr;
+                } else {
+#ifdef _COROUTINE_DEBUG
+                    std::println("task<T>::thenOrCatch(): run ");
+#endif
+                    try {
+                        response_cb(m_coroutine.promise().result());
+                    } catch (std::exception& ex) {
+                        exception_cb(ex);
+                    }
+                }
+#ifdef _COROUTINE_DEBUG
             } else {
-                callback(m_coroutine.promise().result());
+                std::println("task<T>::thenOrCatch(): no coroutine");
+#endif
             }
             return *this;
         }
@@ -511,10 +559,13 @@ class [[nodiscard]] task<void> {
 #endif
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
+                    if (!m_coroutine.promise().drop) {
+                        m_coroutine.destroy();
+                        throw unfinished_promise();
+                    }
+                } else {
                     m_coroutine.destroy();
-                    throw unfinished_promise();
                 }
-                m_coroutine.destroy();
             }
         }
 
@@ -579,7 +630,6 @@ class [[nodiscard]] task<void> {
                 m_coroutine = nullptr;
             }
         }
-
         task<void>& then(const std::function<void()>& callback) {
             if (!m_coroutine.done()) {
                 m_coroutine.promise().drop = true;
@@ -587,6 +637,34 @@ class [[nodiscard]] task<void> {
                 m_coroutine = nullptr;
             } else {
                 callback();
+            }
+            return *this;
+        }
+        task<void>& thenOrCatch(const std::function<void()>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+            if (m_coroutine) {
+                if (!m_coroutine.done()) {
+#ifdef _COROUTINE_DEBUG
+                    std::println("task<void>::thenOrCatch(): decouple from promise #{} and set fail callback", getSNforHandle(m_coroutine));
+#endif
+                    m_coroutine.promise().then = &response_cb;
+                    m_coroutine.promise().fail = &exception_cb;
+                    m_coroutine.promise().drop = true;
+                    m_coroutine = nullptr;
+                } else {
+#ifdef _COROUTINE_DEBUG
+                    std::println("task<void>::thenOrCatch(): run ");
+#endif
+                    try {
+                        m_coroutine.promise().result();
+                        response_cb();
+                    } catch (std::exception& ex) {
+                        exception_cb(ex);
+                    }
+                }
+#ifdef _COROUTINE_DEBUG
+            } else {
+                std::println("task<void>::thenOrCatch(): no coroutine");
+#endif
             }
             return *this;
         }
@@ -668,7 +746,9 @@ class interlock {
             suspended.erase(it);
             if (!continuation.done()) {
                 this->result[id] = result;
+#ifdef _COROUTINE_DEBUG
                 std::println("interlock::resume() -> resume promise #{}", getSNforHandle(continuation));
+#endif
                 continuation.resume();
             }
         }
