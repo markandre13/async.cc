@@ -26,6 +26,13 @@ class broken_resume : public std::logic_error {
         explicit broken_resume(const char* what) : logic_error(what) {}
 };
 
+class unfinished_promise : public std::logic_error {
+    public:
+        unfinished_promise() : std::logic_error("unfinished promise") {}
+        explicit unfinished_promise(const std::string& what) : logic_error(what) {}
+        explicit unfinished_promise(const char* what) : logic_error(what) {}
+};
+
 #ifdef _COROUTINE_DEBUG
 extern unsigned promise_sn_counter;
 extern unsigned task_sn_counter;
@@ -303,16 +310,23 @@ class [[nodiscard]] task {
         task& operator=(const task&) = delete;
 
     public:
-        ~task() {
+        ~task() noexcept(false) {
 #ifdef _COROUTINE_DEBUG
             --task_use_counter;
             if (m_coroutine) {
                 std::println("task #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
+                if (!m_coroutine.done()) {
+                    std::println("task #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
+                }
             } else {
                 std::println("task #{} destroyed, no promise to destroy", sn);
             }
 #endif
             if (m_coroutine) {
+                if (!m_coroutine.done()) {
+                    m_coroutine.destroy();
+                    throw unfinished_promise();
+                }
                 m_coroutine.destroy();
             }
         }

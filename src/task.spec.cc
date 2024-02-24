@@ -12,15 +12,15 @@ using namespace cpptask;
 namespace cpptask {
 
 #ifdef _COROUTINE_DEBUG
-    unsigned promise_sn_counter = 0;
-    unsigned task_sn_counter = 0;
-    unsigned awaitable_sn_counter = 0;
-    unsigned promise_use_counter = 0;
-    unsigned task_use_counter = 0;
-    unsigned awaitable_use_counter = 0;
+unsigned promise_sn_counter = 0;
+unsigned task_sn_counter = 0;
+unsigned awaitable_sn_counter = 0;
+unsigned promise_use_counter = 0;
+unsigned task_use_counter = 0;
+unsigned awaitable_use_counter = 0;
 #endif
 
-}
+}  // namespace cpptask
 
 vector<string> logger;
 template <class... Args>
@@ -76,6 +76,10 @@ task<> fx(bool wait) {
     co_return;
 }
 
+task<> no_wait() { co_return; }
+
+task<> wait() { co_await std::suspend_always(); }
+
 task<> fy(bool wait) {
     log("fy enter");
     co_await fx(wait);
@@ -89,8 +93,8 @@ kaffeeklatsch_spec([] {
             logger.clear();
             resetCounters();
         });
-        // TODO: kaffeeklatsch doesn't run beforeEach & afterEach as part of the test yet.
-        // afterEach([] {
+        // TODO: kaffeeklatsch doesn't run beforeEach & afterEach as part of the
+        // test yet. afterEach([] {
         //     expect(cpptask::task_use_counter).to.equal(0);
         //     expect(cpptask::promise_use_counter).to.equal(0);
         //     expect(cpptask::awaitable_use_counter).to.equal(0);
@@ -183,6 +187,31 @@ kaffeeklatsch_spec([] {
             expect(logger).equals(expect);
             expect(cpptask::task_use_counter).to.equal(0);
             expect(cpptask::promise_use_counter).to.equal(0);
+            expect(cpptask::awaitable_use_counter).to.equal(0);
+        });
+    });
+    describe("calling from sync", [] {
+        it("destroying a finished task will not throw", [] {
+            { auto task = no_wait(); }
+            expect(cpptask::task_use_counter).to.equal(0);
+            expect(cpptask::promise_use_counter).to.equal(0);
+            expect(cpptask::awaitable_use_counter).to.equal(0);
+        });
+        it("destroying an unfinished task will throw an unfinished_promise exception", [] {
+            expect([] {
+                { auto task = wait(); }
+            }).to.throw_(unfinished_promise());
+            expect(cpptask::task_use_counter).to.equal(0);
+            expect(cpptask::promise_use_counter).to.equal(0);
+            expect(cpptask::awaitable_use_counter).to.equal(0);
+        });
+        it("destroying a unfinished task will not throw when uncoupled", [] {
+            {
+                auto task = wait();
+                task.no_wait();
+            }
+            expect(cpptask::task_use_counter).to.equal(0);
+            expect(cpptask::promise_use_counter).to.equal(1);
             expect(cpptask::awaitable_use_counter).to.equal(0);
         });
     });
