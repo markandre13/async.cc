@@ -281,21 +281,79 @@ class async_promise<T&> : public async_promise_base {
 };
 }  // namespace detail
 
-template <typename T = void>
-class [[nodiscard]] async {
+template <typename T>
+class async_base {
     public:
         using promise_type = detail::async_promise<T>;
         using handle_type = std::coroutine_handle<promise_type>;
         using value_type = T;
 
-    private:
-        handle_type m_coroutine;
 #ifdef _COROUTINE_DEBUG
-    public:
         unsigned sn;
+#endif
+    protected:
+        handle_type m_coroutine;
+
+        async_base() noexcept : m_coroutine(nullptr) {
+#ifdef _COROUTINE_DEBUG
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>() #{}", sn);
+#endif
+        }
+        explicit async_base(handle_type coroutine) : m_coroutine(coroutine) {
+#ifdef _COROUTINE_DEBUG
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>(coroutine) #{}", sn);
+#endif
+        }
+        async_base(async_base&& t) noexcept : m_coroutine(t.m_coroutine) {
+#ifdef _COROUTINE_DEBUG
+            ++async_use_counter;
+            sn = ++async_sn_counter;
+            // std::println("  create async<>()&& #{} from #{}", sn, t.sn);
+#endif
+            t.m_coroutine = nullptr;
+        }
+
+        ~async_base() noexcept(false) {
+#ifdef _COROUTINE_DEBUG
+            --async_use_counter;
+            if (m_coroutine) {
+                std::println("async #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
+                if (!m_coroutine.done()) {
+                    std::println("async #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
+                }
+            } else {
+                std::println("async #{} destroyed, no promise to destroy", sn);
+            }
+#endif
+            if (m_coroutine) {
+                if (!m_coroutine.done()) {
+                    m_coroutine.destroy();
+                    throw unfinished_promise();
+                }
+                m_coroutine.destroy();
+            }
+        }
+
+        async_base(const async_base&) = delete;
+        async_base& operator=(const async_base&) = delete;
+
+    public:
+        async_base& operator=(async_base&& other) noexcept {
+            if (std::addressof(other) != this) {
+                if (m_coroutine) {
+                    m_coroutine.destroy();
+                }
+                m_coroutine = other.m_coroutine;
+                other.m_coroutine = nullptr;
+            }
+            return *this;
+        }
 
     private:
-#endif
         struct awaitable_base {
                 handle_type m_coroutine;
                 unsigned sn;
@@ -324,66 +382,6 @@ class [[nodiscard]] async {
         };
 
     public:
-        async() noexcept : m_coroutine(nullptr) {
-#ifdef _COROUTINE_DEBUG
-            ++async_use_counter;
-            sn = ++async_sn_counter;
-            // std::println("  create async<>() #{}", sn);
-#endif
-        }
-        explicit async(handle_type coroutine) : m_coroutine(coroutine) {
-#ifdef _COROUTINE_DEBUG
-            ++async_use_counter;
-            sn = ++async_sn_counter;
-            // std::println("  create async<>(coroutine) #{}", sn);
-#endif
-        }
-        async(async&& t) noexcept : m_coroutine(t.m_coroutine) {
-#ifdef _COROUTINE_DEBUG
-            ++async_use_counter;
-            sn = ++async_sn_counter;
-            // std::println("  create async<>()&& #{} from #{}", sn, t.sn);
-#endif
-            t.m_coroutine = nullptr;
-        }
-
-    private:
-        async(const async&) = delete;
-        async& operator=(const async&) = delete;
-
-    public:
-        ~async() noexcept(false) {
-#ifdef _COROUTINE_DEBUG
-            --async_use_counter;
-            if (m_coroutine) {
-                std::println("async #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
-                if (!m_coroutine.done()) {
-                    std::println("async #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
-                }
-            } else {
-                std::println("async #{} destroyed, no promise to destroy", sn);
-            }
-#endif
-            if (m_coroutine) {
-                if (!m_coroutine.done()) {
-                    m_coroutine.destroy();
-                    throw unfinished_promise();
-                }
-                m_coroutine.destroy();
-            }
-        }
-
-        async& operator=(async&& other) noexcept {
-            if (std::addressof(other) != this) {
-                if (m_coroutine) {
-                    m_coroutine.destroy();
-                }
-                m_coroutine = other.m_coroutine;
-                other.m_coroutine = nullptr;
-            }
-            return *this;
-        }
-
         auto operator co_await() const& noexcept {
             struct awaitable : awaitable_base {
                     using awaitable_base::awaitable_base;
@@ -428,25 +426,42 @@ class [[nodiscard]] async {
             return awaitable{m_coroutine};
 #endif
         }
+
         void no_wait() {
             if (!m_coroutine.done()) {
                 m_coroutine.promise().drop = true;
                 m_coroutine = nullptr;
             }
         }
+};
+
+template <typename T = void>
+class [[nodiscard]] async : public async_base<T> {
+    public:
+        using promise_type = detail::async_promise<T>;
+        using handle_type = std::coroutine_handle<promise_type>;
+        using value_type = T;
+
+    public:
+        async() noexcept : async_base<T>() {}
+        explicit async(handle_type coroutine) noexcept : async_base<T>(coroutine) {}
+        async(async&& t) noexcept : async_base<T>(t.m_coroutine) {}
+
         async<T>& then(const std::function<void(T response)>& callback) {
+            handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
                     m_coroutine.promise().then = &callback;
                     m_coroutine.promise().drop = true;
                     m_coroutine = nullptr;
                 } else {
-                    callback(m_coroutine.promise().result());  // THIS THROWS!!!
+                    callback(m_coroutine.promise().result());
                 }
             }
             return *this;
         }
         async<T>& thenOrCatch(const std::function<void(T response)>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+            handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
 #ifdef _COROUTINE_DEBUG
@@ -476,161 +491,18 @@ class [[nodiscard]] async {
 };
 
 template <>
-class [[nodiscard]] async<void> {
+class [[nodiscard]] async<void> : public async_base<void> {
     public:
         using promise_type = detail::async_promise<void>;
         using handle_type = std::coroutine_handle<promise_type>;
 
-    private:
-        handle_type m_coroutine;
-#ifdef _COROUTINE_DEBUG
     public:
-        unsigned sn;
+        async() noexcept : async_base<void>() {}
+        explicit async(handle_type coroutine) noexcept : async_base<void>(coroutine) {}
+        async(async&& t) noexcept : async_base<void>(t.m_coroutine) {}
 
-    private:
-#endif
-        struct awaitable_base {
-                handle_type m_coroutine;
-                unsigned sn;
-#ifdef _COROUTINE_DEBUG
-                awaitable_base(handle_type coroutine, unsigned sn) noexcept : m_coroutine(coroutine), sn(sn) {
-                    ++awaitable_use_counter;
-                    // std::println("   create awaitable_base(coroutine) #{}", this->sn);
-                }
-                ~awaitable_base() { --awaitable_use_counter; }
-                bool await_ready() const noexcept {
-                    std::println("awaitable #{} for promise #{}: await_ready() -> false", this->sn, getSNforHandle(m_coroutine));
-                    return false;
-                }
-#else
-                awaitable_base(handle_type coroutine) noexcept : m_coroutine(coroutine) {}
-                bool await_ready() const noexcept { return false; }
-#endif
-                bool await_suspend(std::coroutine_handle<> parent) noexcept {
-#ifdef _COROUTINE_DEBUG
-                    std::println("awaitable #{} for promise #{}: await_suspend() -> set promise #{} as parent and suspend", this->sn,
-                                 getSNforHandle(m_coroutine), getSNforHandle(parent));
-#endif
-                    m_coroutine.promise().set_parent(parent);
-                    return !m_coroutine.done();
-                }
-        };
-
-    public:
-        async() noexcept : m_coroutine(nullptr) {
-#ifdef _COROUTINE_DEBUG
-            ++async_use_counter;
-            sn = ++async_sn_counter;
-            // std::println("  create async<>() #{}", sn);
-#endif
-        }
-        explicit async(handle_type coroutine) : m_coroutine(coroutine) {
-#ifdef _COROUTINE_DEBUG
-            ++async_use_counter;
-            sn = ++async_sn_counter;
-            // std::println("  create async<>(coroutine) #{}", sn);
-#endif
-        }
-        async(async&& t) noexcept : m_coroutine(t.m_coroutine) {
-#ifdef _COROUTINE_DEBUG
-            ++async_use_counter;
-            sn = ++async_sn_counter;
-            // std::println("  create async<>()&& #{} from #{}", sn, t.sn);
-#endif
-            t.m_coroutine = nullptr;
-        }
-
-    private:
-        async(const async&) = delete;
-        async& operator=(const async&) = delete;
-
-    public:
-        ~async() noexcept(false) {
-#ifdef _COROUTINE_DEBUG
-            --async_use_counter;
-            if (m_coroutine) {
-                std::println("async #{} destroyed, also destroy promise #{}", sn, getSNforHandle(m_coroutine));
-                if (!m_coroutine.done()) {
-                    std::println("async #{} destroyed, also destroy promise #{} BUT IT'S NOT DONE", sn, getSNforHandle(m_coroutine));
-                }
-            } else {
-                std::println("async #{} destroyed, no promise to destroy", sn);
-            }
-#endif
-            if (m_coroutine) {
-                if (!m_coroutine.done()) {
-                    if (!m_coroutine.promise().drop) {
-                        m_coroutine.destroy();
-                        throw unfinished_promise();
-                    }
-                } else {
-                    m_coroutine.destroy();
-                }
-            }
-        }
-
-        async& operator=(async&& other) noexcept {
-            if (std::addressof(other) != this) {
-                if (m_coroutine) {
-                    m_coroutine.destroy();
-                }
-                m_coroutine = other.m_coroutine;
-                other.m_coroutine = nullptr;
-            }
-            return *this;
-        }
-
-        auto operator co_await() const& noexcept {
-            struct awaitable : awaitable_base {
-                    using awaitable_base::awaitable_base;
-                    decltype(auto) await_resume() {
-                        if (!this->m_coroutine) {
-                            throw broken_promise{};
-                        }
-#ifdef _COROUTINE_DEBUG
-                        std::println("awaitable #{} for co_await()&: await_resume() -> return value from promise #{}", this->sn,
-                                     getSNforHandle(this->m_coroutine));
-#endif
-                        return this->m_coroutine.promise().result();
-                    }
-            };
-#ifdef _COROUTINE_DEBUG
-            auto asn = ++awaitable_sn_counter;
-            std::println("async #{} co_await&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
-            return awaitable{m_coroutine, asn};
-#else
-            return awaitable{m_coroutine};
-#endif
-        }
-        auto operator co_await() const&& noexcept {
-            struct awaitable : awaitable_base {
-                    using awaitable_base::awaitable_base;
-                    decltype(auto) await_resume() {
-                        if (!this->m_coroutine) {
-                            throw broken_promise{};
-                        }
-#ifdef _COROUTINE_DEBUG
-                        std::println("awaitable #{} for co_await()&&: await_resume() -> return value from promise #{}", this->sn,
-                                     getSNforHandle(this->m_coroutine));
-#endif
-                        return std::move(this->m_coroutine.promise()).result();
-                    }
-            };
-#ifdef _COROUTINE_DEBUG
-            auto asn = ++awaitable_sn_counter;
-            std::println("async #{} co_await&&: create awaitable #{} for promise #{}", sn, asn, getSNforHandle(m_coroutine));
-            return awaitable{m_coroutine, asn};
-#else
-            return awaitable{m_coroutine};
-#endif
-        }
-        void no_wait() {
-            if (!m_coroutine.done()) {
-                m_coroutine.promise().drop = true;
-                m_coroutine = nullptr;
-            }
-        }
         async<void>& then(const std::function<void()>& callback) {
+            handle_type& m_coroutine = this->m_coroutine;
             if (!m_coroutine.done()) {
                 m_coroutine.promise().drop = true;
                 m_coroutine.promise().then = &callback;
@@ -641,6 +513,7 @@ class [[nodiscard]] async<void> {
             return *this;
         }
         async<void>& thenOrCatch(const std::function<void()>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+            handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
 #ifdef _COROUTINE_DEBUG
