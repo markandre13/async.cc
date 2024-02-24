@@ -281,7 +281,7 @@ class async_promise<T&> : public async_promise_base {
 };
 }  // namespace detail
 
-template <typename T>
+template <typename T = void>
 class [[nodiscard]] async {
     public:
         using promise_type = detail::async_promise<T>;

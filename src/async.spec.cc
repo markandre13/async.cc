@@ -39,7 +39,7 @@ async<const char *> f3() {
     co_return "hello";
 }
 
-async<void> f2() {
+async<> f2() {
     log("f2 enter");
     auto text = co_await f3();
     log("expect 'hello', got '{}'", text);
@@ -64,7 +64,7 @@ async<int> f0() {
     co_return 10;
 }
 
-async<void> fx(bool wait) {
+async<> fx(bool wait) {
     log("fx enter");
     if (wait) {
         log("fx co_await");
@@ -75,13 +75,13 @@ async<void> fx(bool wait) {
     co_return;
 }
 
-async<void> wait() { co_await std::suspend_always(); }
-async<void> no_wait() { co_return; }
+async<> wait() { co_await std::suspend_always(); }
+async<> no_wait() { co_return; }
 
-async<void> no_wait_void() { co_return; }
+async<> no_wait_void() { co_return; }
 async<unsigned> no_wait_unsigned(unsigned value) { co_return value; }
 
-async<void> no_wait_void_throw() {
+async<> no_wait_void_throw() {
     throw runtime_error("yikes");
     co_return;
 }
@@ -90,7 +90,7 @@ async<unsigned> no_wait_unsigned_throw(unsigned value) {
     co_return value;
 }
 
-async<void> wait_void(unsigned id) {
+async<> wait_void(unsigned id) {
     co_await my_interlock.suspend(id);
     co_return;
 }
@@ -99,7 +99,7 @@ async<unsigned> wait_unsigned(unsigned id) {
     co_return v;
 }
 
-async<void> wait_void_throw(unsigned id) {
+async<> wait_void_throw(unsigned id) {
     println("wait_void_throw(): suspend");
     auto v = co_await my_interlock.suspend(id);
     println("wait_void_throw(): resume and throw");
@@ -119,7 +119,7 @@ async<unsigned &> wait_unsigned_ref(unsigned id) {
     co_return global_value_ref;
 }
 
-async<void> fy(bool wait) {
+async<> fy(bool wait) {
     log("fy enter");
     co_await fx(wait);
     log("fy leave");
