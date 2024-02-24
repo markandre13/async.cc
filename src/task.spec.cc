@@ -40,7 +40,7 @@ task<const char *> f3() {
     co_return "hello";
 }
 
-task<> f2() {
+task<void> f2() {
     log("f2 enter");
     auto text = co_await f3();
     log("expect 'hello', got '{}'", text);
@@ -65,7 +65,7 @@ task<int> f0() {
     co_return 10;
 }
 
-task<> fx(bool wait) {
+task<void> fx(bool wait) {
     log("fx enter");
     if (wait) {
         log("fx co_await");
@@ -76,16 +76,28 @@ task<> fx(bool wait) {
     co_return;
 }
 
-task<> no_wait() { co_return; }
+task<void> no_wait() { co_return; }
 
-task<> wait() { co_await std::suspend_always(); }
+task<unsigned> no_wait_unsigned(unsigned value) { co_return value; }
 
-task<unsigned> wait(unsigned id) {
+task<void> wait() { co_await std::suspend_always(); }
+
+task<unsigned> wait_unsigned(unsigned id) {
     auto v = co_await my_interlock.suspend(id);
     co_return v;
 }
+task<void> wait_void(unsigned id) {
+    co_await my_interlock.suspend(id);
+    co_return;
+}
+unsigned global_value;
+unsigned &global_value_ref = global_value;
+task<unsigned &> wait_unsigned_ref(unsigned id) {
+    global_value = co_await my_interlock.suspend(id);
+    co_return global_value_ref;
+}
 
-task<> fy(bool wait) {
+task<void> fy(bool wait) {
     log("fy enter");
     co_await fx(wait);
     log("fy leave");
@@ -93,8 +105,12 @@ task<> fy(bool wait) {
 }
 
 kaffeeklatsch_spec([] {
+    beforeEach([] {
+        logger.clear();
+        resetCounters();
+    });
     describe("coroutine", [] {
-        beforeEach([] {
+        beforeEach([] {  // TODO: there should only be one
             logger.clear();
             resetCounters();
         });
@@ -221,27 +237,69 @@ kaffeeklatsch_spec([] {
         });
     });
     describe("then(...)", [] {
-        fit("then", [] {
-            bool thenExecuted = false;
-            wait(10).then([&]() {
-                thenExecuted = true;
+        describe("will be executed after the co_await", [] {
+            it("T", [] {
+                bool thenExecuted = false;
+                unsigned out = 0;
+                {
+                    wait_unsigned(10).then([&](unsigned response) {
+                        thenExecuted = true;
+                        out = response;
+                    });
+                }
+                expect(thenExecuted).to.beFalse();
+                my_interlock.resume(10, 20);
+                expect(thenExecuted).to.beTrue();
+                expect(out).to.equal(20);
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
             });
-            expect(thenExecuted).to.beFalse();
-            my_interlock.resume(10, 20);
-            expect(thenExecuted).to.beTrue();
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            it("void", [] {
+                bool thenExecuted = false;
+                {
+                    wait_void(10).then([&]() {
+                        thenExecuted = true;
+                    });
+                }
+                expect(thenExecuted).to.beFalse();
+                my_interlock.resume(10, 20);
+                expect(thenExecuted).to.beTrue();
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
+            });
+            xit("T&", [] {});
         });
-        fit("when there was no co_await, the 'then' was executed", [] {
-            bool thenExecuted = false;
-            no_wait().then([&]() {
-                thenExecuted = true;
+        describe("will be executed when there was no co_await", [] {
+            it("T", [] {
+                bool thenExecuted = false;
+                unsigned out = 0;
+                {
+                    no_wait_unsigned(10).then([&](unsigned response) {
+                        thenExecuted = true;
+                        out = response;
+                    });
+                }
+                expect(thenExecuted).to.beTrue();
+                expect(out).to.equal(10);
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
             });
-            expect(thenExecuted).to.beTrue();
-            expect(cpptask::task_use_counter).to.equal(0);
-            expect(cpptask::promise_use_counter).to.equal(0);
-            expect(cpptask::awaitable_use_counter).to.equal(0);
+            it("void", [] {
+                bool thenExecuted = false;
+                {
+                    no_wait().then([&]() {
+                        thenExecuted = true;
+                    });
+                }
+                expect(thenExecuted).to.beTrue();
+                expect(cpptask::task_use_counter).to.equal(0);
+                expect(cpptask::promise_use_counter).to.equal(0);
+                expect(cpptask::awaitable_use_counter).to.equal(0);
+            });
+            xit("T&", [] {});
         });
     });
 });
