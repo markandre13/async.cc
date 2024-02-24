@@ -6,6 +6,7 @@
 #include <map>
 #include <print>
 #include <stdexcept>
+#include <functional>
 
 namespace cpptask {
 
@@ -98,6 +99,7 @@ class task_promise_base {
 
     public:
         bool drop = false;
+        const std::function<void()> *then = nullptr;
 #ifdef _COROUTINE_DEBUG
         unsigned sn;
         task_promise_base() noexcept {
@@ -106,6 +108,9 @@ class task_promise_base {
             // std::println("  create task_promise_base #{}", sn);
         }
         ~task_promise_base() {
+            if (then) {
+                (*then)();
+            }
             --promise_use_counter;
             std::println("promise #{}: destroyed", sn);
         }
@@ -391,6 +396,16 @@ class [[nodiscard]] task {
                 m_coroutine.promise().drop = true;
                 m_coroutine = nullptr;
             }
+        }
+        task<T>& then(const std::function<void()> &callback) {
+            if (!m_coroutine.done()) {
+                m_coroutine.promise().drop = true;
+                m_coroutine.promise().then = &callback;
+                m_coroutine = nullptr;
+            } else {
+                callback();
+            }
+            return *this;
         }
 };
 

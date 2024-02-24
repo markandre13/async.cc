@@ -80,6 +80,11 @@ task<> no_wait() { co_return; }
 
 task<> wait() { co_await std::suspend_always(); }
 
+task<unsigned> wait(unsigned id) {
+    auto v = co_await my_interlock.suspend(id);
+    co_return v;
+}
+
 task<> fy(bool wait) {
     log("fy enter");
     co_await fx(wait);
@@ -212,6 +217,30 @@ kaffeeklatsch_spec([] {
             }
             expect(cpptask::task_use_counter).to.equal(0);
             expect(cpptask::promise_use_counter).to.equal(1);
+            expect(cpptask::awaitable_use_counter).to.equal(0);
+        });
+    });
+    describe("then(...)", [] {
+        fit("then", [] {
+            bool thenExecuted = false;
+            wait(10).then([&]() {
+                thenExecuted = true;
+            });
+            expect(thenExecuted).to.beFalse();
+            my_interlock.resume(10, 20);
+            expect(thenExecuted).to.beTrue();
+            expect(cpptask::task_use_counter).to.equal(0);
+            expect(cpptask::promise_use_counter).to.equal(0);
+            expect(cpptask::awaitable_use_counter).to.equal(0);
+        });
+        fit("when there was no co_await, the 'then' was executed", [] {
+            bool thenExecuted = false;
+            no_wait().then([&]() {
+                thenExecuted = true;
+            });
+            expect(thenExecuted).to.beTrue();
+            expect(cpptask::task_use_counter).to.equal(0);
+            expect(cpptask::promise_use_counter).to.equal(0);
             expect(cpptask::awaitable_use_counter).to.equal(0);
         });
     });
