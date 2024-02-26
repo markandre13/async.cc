@@ -335,9 +335,14 @@ kaffeeklatsch_spec([] {
                         [&](unsigned) {
                             thenExecuted = true;
                         },
-                        [&](std::exception &error) {
-                            failExecuted = true;
-                            out = error.what();
+                        [&](std::exception_ptr eptr) {
+                            try {
+                                std::rethrow_exception(eptr);
+                            }
+                            catch(runtime_error &error) {
+                                failExecuted = true;
+                                out = error.what();
+                            }
                         });
                 }
                 expect(thenExecuted).to.beFalse();
@@ -360,9 +365,14 @@ kaffeeklatsch_spec([] {
                         [&]() {
                             thenExecuted = true;
                         },
-                        [&](std::exception &error) {
-                            failExecuted = true;
-                            out = error.what();
+                        [&](std::exception_ptr eptr) {
+                            try {
+                                std::rethrow_exception(eptr);
+                            }
+                            catch(runtime_error &error) {
+                                failExecuted = true;
+                                out = error.what();
+                            }
                         });
                 }
                 expect(thenExecuted).to.beFalse();
@@ -387,9 +397,14 @@ kaffeeklatsch_spec([] {
                         [&](unsigned) {
                             thenExecuted = true;
                         },
-                        [&](std::exception &error) {
-                            failExecuted = true;
-                            out = error.what();
+                        [&](std::exception_ptr eptr) {
+                            try {
+                                std::rethrow_exception(eptr);
+                            }
+                            catch(runtime_error &error) {
+                                failExecuted = true;
+                                out = error.what();
+                            }
                         });
                 }
                 expect(thenExecuted).to.beFalse();
@@ -408,9 +423,14 @@ kaffeeklatsch_spec([] {
                         [&]() {
                             thenExecuted = true;
                         },
-                        [&](std::exception &error) {
-                            failExecuted = true;
-                            out = error.what();
+                        [&](std::exception_ptr eptr) {
+                            try {
+                                std::rethrow_exception(eptr);
+                            }
+                            catch(runtime_error &error) {
+                                failExecuted = true;
+                                out = error.what();
+                            }
                         });
                 }
                 expect(thenExecuted).to.beFalse();

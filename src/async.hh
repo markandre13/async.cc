@@ -101,7 +101,7 @@ class async_promise_base {
 
     public:
         bool drop = false;
-        const std::function<void(std::exception& error)>* fail = nullptr;
+        const std::function<void(std::exception_ptr eptr)>* fail = nullptr;
 #ifdef _COROUTINE_DEBUG
         unsigned sn;
         async_promise_base() noexcept {
@@ -154,12 +154,7 @@ class async_promise final : public async_promise_base {
                     break;
                 case result_type::exception:
                     if (fail != nullptr) {
-                        try {
-                            std::rethrow_exception(m_exception);
-                        } catch (std::exception& e) {
-                            (*fail)(e);
-                        } catch (...) {
-                        }
+                        (*fail)(m_exception);
                     }
                     m_exception.~exception_ptr();
                     break;
@@ -219,11 +214,8 @@ class async_promise<void> : public async_promise_base {
         ~async_promise() {
             if (m_exception) {
                 if (fail != nullptr) {
-                    try {
-                        std::rethrow_exception(m_exception);
-                    } catch (std::exception& e) {
-                        (*fail)(e);
-                    } catch (...) {
+                    if (fail != nullptr) {
+                        (*fail)(m_exception);
                     }
                 }
             } else {
@@ -460,7 +452,7 @@ class [[nodiscard]] async : public async_base<T> {
             }
             return *this;
         }
-        async<T>& thenOrCatch(const std::function<void(T response)>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+        async<T>& thenOrCatch(const std::function<void(T response)>& response_cb, const std::function<void(std::exception_ptr eptr)>& exception_cb) {
             handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
@@ -477,8 +469,8 @@ class [[nodiscard]] async : public async_base<T> {
 #endif
                     try {
                         response_cb(m_coroutine.promise().result());
-                    } catch (std::exception& ex) {
-                        exception_cb(ex);
+                    } catch (...) {
+                        exception_cb(std::current_exception());
                     }
                 }
 #ifdef _COROUTINE_DEBUG
@@ -512,7 +504,7 @@ class [[nodiscard]] async<void> : public async_base<void> {
             }
             return *this;
         }
-        async<void>& thenOrCatch(const std::function<void()>& response_cb, const std::function<void(std::exception& error)>& exception_cb) {
+        async<void>& thenOrCatch(const std::function<void()>& response_cb, const std::function<void(std::exception_ptr eptr)>& exception_cb) {
             handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
@@ -530,8 +522,8 @@ class [[nodiscard]] async<void> : public async_base<void> {
                     try {
                         m_coroutine.promise().result();
                         response_cb();
-                    } catch (std::exception& ex) {
-                        exception_cb(ex);
+                    } catch (...) {
+                        exception_cb(std::current_exception());
                     }
                 }
 #ifdef _COROUTINE_DEBUG
