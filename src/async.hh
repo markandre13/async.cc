@@ -101,7 +101,7 @@ class async_promise_base {
 
     public:
         bool drop = false;
-        const std::function<void(std::exception_ptr eptr)>* fail = nullptr;
+        std::function<void(std::exception_ptr eptr)> fail;
 #ifdef _COROUTINE_DEBUG
         unsigned sn;
         async_promise_base() noexcept {
@@ -147,14 +147,14 @@ class async_promise final : public async_promise_base {
         ~async_promise() {
             switch (m_resultType) {
                 case result_type::value:
-                    if (then != nullptr) {
-                        (*then)(m_value);
+                    if (then) {
+                        then(m_value);
                     }
                     m_value.~T();
                     break;
                 case result_type::exception:
-                    if (fail != nullptr) {
-                        (*fail)(m_exception);
+                    if (fail) {
+                        fail(m_exception);
                     }
                     m_exception.~exception_ptr();
                     break;
@@ -191,7 +191,7 @@ class async_promise final : public async_promise_base {
             return std::move(m_value);
         }
 
-        const std::function<void(const T response)>* then = nullptr;
+        std::function<void(const T response)> then;
 
     private:
         enum class result_type { empty, value, exception };
@@ -213,14 +213,12 @@ class async_promise<void> : public async_promise_base {
         }
         ~async_promise() {
             if (m_exception) {
-                if (fail != nullptr) {
-                    if (fail != nullptr) {
-                        (*fail)(m_exception);
-                    }
+                if (fail) {
+                    fail(m_exception);
                 }
             } else {
-                if (then != nullptr) {
-                    (*then)();
+                if (then) {
+                    then();
                 }
             }
         }
@@ -240,7 +238,7 @@ class async_promise<void> : public async_promise_base {
             }
         }
 
-        const std::function<void()>* then = nullptr;
+        std::function<void()> then;
 
     private:
         std::exception_ptr m_exception;
@@ -265,7 +263,7 @@ class async_promise<T&> : public async_promise_base {
             }
             return *m_value;
         }
-        const std::function<void(const T& response)>* then = nullptr;
+        std::function<void(const T& response)> then;
 
     private:
         T* m_value = nullptr;
@@ -443,7 +441,7 @@ class [[nodiscard]] async : public async_base<T> {
             handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
-                    m_coroutine.promise().then = &callback;
+                    m_coroutine.promise().then = callback;
                     m_coroutine.promise().drop = true;
                     m_coroutine = nullptr;
                 } else {
@@ -452,15 +450,15 @@ class [[nodiscard]] async : public async_base<T> {
             }
             return *this;
         }
-        async<T>& thenOrCatch(const std::function<void(T response)>& response_cb, const std::function<void(std::exception_ptr eptr)>& exception_cb) {
+        async<T>& thenOrCatch(std::function<void(T response)> response_cb, std::function<void(std::exception_ptr eptr)> exception_cb) {
             handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
 #ifdef _COROUTINE_DEBUG
                     std::println("async<T>::thenOrCatch(): decouple from promise and set fail callback");
 #endif
-                    m_coroutine.promise().then = &response_cb;
-                    m_coroutine.promise().fail = &exception_cb;
+                    m_coroutine.promise().then = response_cb;
+                    m_coroutine.promise().fail = exception_cb;
                     m_coroutine.promise().drop = true;
                     m_coroutine = nullptr;
                 } else {
@@ -493,26 +491,26 @@ class [[nodiscard]] async<void> : public async_base<void> {
         explicit async(handle_type coroutine) noexcept : async_base<void>(coroutine) {}
         async(async&& t) noexcept : async_base<void>(t.m_coroutine) {}
 
-        async<void>& then(const std::function<void()>& callback) {
+        async<void>& then(std::function<void()> callback) {
             handle_type& m_coroutine = this->m_coroutine;
             if (!m_coroutine.done()) {
                 m_coroutine.promise().drop = true;
-                m_coroutine.promise().then = &callback;
+                m_coroutine.promise().then = callback;
                 m_coroutine = nullptr;
             } else {
                 callback();
             }
             return *this;
         }
-        async<void>& thenOrCatch(const std::function<void()>& response_cb, const std::function<void(std::exception_ptr eptr)>& exception_cb) {
+        async<void>& thenOrCatch(std::function<void()> response_cb, std::function<void(std::exception_ptr eptr)> exception_cb) {
             handle_type& m_coroutine = this->m_coroutine;
             if (m_coroutine) {
                 if (!m_coroutine.done()) {
 #ifdef _COROUTINE_DEBUG
                     std::println("async<void>::thenOrCatch(): decouple from promise #{} and set fail callback", getSNforHandle(m_coroutine));
 #endif
-                    m_coroutine.promise().then = &response_cb;
-                    m_coroutine.promise().fail = &exception_cb;
+                    m_coroutine.promise().then = response_cb;
+                    m_coroutine.promise().fail = exception_cb;
                     m_coroutine.promise().drop = true;
                     m_coroutine = nullptr;
                 } else {

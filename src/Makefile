@@ -1,6 +1,6 @@
 APP=tests
 
-#MEM=-fsanitize=address -fsanitize=leak
+MEM=-fsanitize=address -fsanitize=leak
 
 CXX=/usr/local/opt/llvm/bin/clang++
 CFLAGS=-std=c++23 $(MEM) -O0 -g \
