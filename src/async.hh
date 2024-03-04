@@ -563,6 +563,34 @@ async<T&> async_promise<T&>::get_return_object() noexcept {
 
 }  // namespace detail
 
+class signal {
+    std::coroutine_handle<detail::async_promise_base> continuation;
+    class awaiter {
+            public:
+                awaiter(signal* _this) : _this(_this) {}
+                bool await_ready() const noexcept { return false; }
+                template <typename T>
+                bool await_suspend(std::coroutine_handle<detail::async_promise<T>> awaitingCoroutine) noexcept {
+#ifdef _COROUTINE_DEBUG
+                    std::println("signal::awaitable::await_suspend()");
+#endif
+                    _this->continuation = *((std::coroutine_handle<detail::async_promise_base>*)&awaitingCoroutine);
+                    return true;
+                }
+                void await_resume() {
+#ifdef _COROUTINE_DEBUG
+                    std::println("signal::awaitable::await_resume()");
+#endif
+                }
+            private:
+                signal* _this;
+        };
+
+    public:
+        auto suspend() { return awaiter{this}; }
+        void resume() { continuation.resume(); }
+};
+
 template <typename K, typename V>
 class interlock {
     private:
