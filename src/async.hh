@@ -603,7 +603,7 @@ class interlock {
         void resume(K id, V result) {
             auto it = m_suspended.find(id);
             if (it == m_suspended.end()) {
-                throw broken_resume("broken resume: did not find async");
+                throw broken_resume("interlock::resume(...): did not find key");
             }
             auto continuation = it->second;
             m_suspended.erase(it);
