@@ -7,7 +7,7 @@ a lightweight c++20 coroutine task class
 
 while c++20/23 coroutines provide a lot of freedom to accommodate many different use cases and hardware platforms, actually _using_ them does not provide much peace of mind.
 
-a lot of examples on the web do use a class named 'task' along with coroutines, but it's actually not part of the c++ standard. my guess that it's a reference to the cppcoro library.
+a lot of examples on the web do use a class named 'task' along with coroutines, but it's actually not part of the c++ standard.
 
 this file contains a variation of cppcoro's 'task' class called 'async' and tweaks it to be usable without the rest of the cppcoro library.
 

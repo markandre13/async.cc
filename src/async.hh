@@ -627,7 +627,10 @@ class interlock {
         std::map<K, V> m_result;
 
     public:
-        auto suspend(K id) { return awaiter{id, this}; }
+        inline bool empty() { return m_suspended.empty(); }
+        inline auto begin() { return m_suspended.begin(); }
+        inline auto end() { return m_suspended.end(); }
+        inline auto suspend(K id) { return awaiter{id, this}; }
         void resume(K id, V result) {
             auto it = m_suspended.find(id);
             if (it == m_suspended.end()) {

@@ -2,13 +2,14 @@ APP=tests
 
 MEM=-fsanitize=address -fsanitize=leak
 
-CXX=/usr/local/opt/llvm/bin/clang++
+LLVM_DIR=$(shell for x in /opt/homebrew/opt/llvm /usr/local/opt/llvm ; do if test -d $$x ; then echo $$x ; break ; fi ; done)
+CXX=$(LLVM_DIR)/bin/clang++
 CFLAGS=-std=c++23 $(MEM) -O0 -g \
 	-Wall -Wextra -Werror=return-type -Werror=shadow -Wno-deprecated-anon-enum-enum-conversion \
-	-I/usr/local/opt/llvm/include/c++ \
+	-I$(LLVM_DIR)/include/c++ \
 	-I../upstream/kaffeeklatsch/src
 
-LDFLAGS=-L/usr/local/opt/llvm/lib/c++ -Wl,-rpath,/usr/local/opt/llvm/lib/c++ \
+LDFLAGS=-L$(LLVM_DIR)/lib/c++ -Wl,-rpath,$(LLVM_DIR)/lib/c++ \
 	-L/usr/local/lib $(MEM) -g
 
 SRC = async.spec.cc ../upstream/kaffeeklatsch/src/kaffeeklatsch.cc

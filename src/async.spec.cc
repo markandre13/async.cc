@@ -64,14 +64,21 @@ async<int> f0() {
     co_return 10;
 }
 
-async<> fx(bool wait) {
-    log("fx enter");
+async<> waitOnMyInterlock10IfTrue(bool wait) {
+    log("waitOnMyInterlock10IfTrue enter");
     if (wait) {
-        log("fx co_await");
+        log("waitOnMyInterlock10IfTrue co_await");
         auto v = co_await my_interlock.suspend(10);
-        log("fx co_await got {}", v);
+        log("waitOnMyInterlock10IfTrue co_await got {}", v);
     }
-    log("fx leave");
+    log("waitOnMyInterlock10IfTrue leave");
+    co_return;
+}
+
+async<> nestedWaitOnMyInterlock10IfTrue(bool wait) {
+    log("nestedWaitOnMyInterlock10IfTrue enter");
+    co_await waitOnMyInterlock10IfTrue(wait);
+    log("nestedWaitOnMyInterlock10IfTrue leave");
     co_return;
 }
 
@@ -119,13 +126,6 @@ async<unsigned &> wait_unsigned_ref(unsigned id) {
     co_return global_value_ref;
 }
 
-async<> fy(bool wait) {
-    log("fy enter");
-    co_await fx(wait);
-    log("fy leave");
-    co_return;
-}
-
 kaffeeklatsch_spec([] {
     beforeEach([] {
         logger.clear();
@@ -139,28 +139,38 @@ kaffeeklatsch_spec([] {
     describe("coroutine", [] {
 
         it("handles single method, no suspend", [] {
-            { fx(false).no_wait(); }
+            // WHEN a calling a coroutine which does not suspend
+            { waitOnMyInterlock10IfTrue(false).no_wait(); }
+            // THEN it is successfully executed
             expect(logger).to.equal(vector<string>{
-                "fx enter",
-                "fx leave",
+                "waitOnMyInterlock10IfTrue enter",
+                "waitOnMyInterlock10IfTrue leave",
             });
         });
 
-        it("handles single method, one suspend", [] {
-            { fx(true).no_wait(); }
+        it("handles single method, one suspend returning a result value", [] {
+            // GIVEN a call a coroutine which suspeds on an interlock
+            { waitOnMyInterlock10IfTrue(true).no_wait(); }
             log("resume");
+
+            // WHEN we resume the coroutine and provide a return value of 2001
             my_interlock.resume(10, 2001);
+
+            // THEN the coroutine got the value of 2001 and resumed it's execution
             expect(logger).to.equal(vector<string>{
-                "fx enter",
-                "fx co_await",
+                "waitOnMyInterlock10IfTrue enter",
+                "waitOnMyInterlock10IfTrue co_await",
                 "resume",
-                "fx co_await got 2001",
-                "fx leave",
+                "waitOnMyInterlock10IfTrue co_await got 2001",
+                "waitOnMyInterlock10IfTrue leave",
             });
+        });
+        it("handles one single method, one suspend returning an exception", [] {
+
         });
 
         it("handles two nested methods, no suspend", [] {
-            { fy(true).no_wait(); }
+            { nestedWaitOnMyInterlock10IfTrue(true).no_wait(); }
             log("resume");
             my_interlock.resume(10, 2001);
             // println("==========================================");
@@ -168,12 +178,20 @@ kaffeeklatsch_spec([] {
             //     println("{}", l);
             // }
             // println("==========================================");
-            expect(logger).to.equal(vector<string>{"fy enter", "fx enter", "fx co_await", "resume", "fx co_await got 2001", "fx leave", "fy leave"});
+            expect(logger).to.equal(vector<string>{
+                "nestedWaitOnMyInterlock10IfTrue enter",
+                "waitOnMyInterlock10IfTrue enter",
+                "waitOnMyInterlock10IfTrue co_await",
+                "resume",
+                "waitOnMyInterlock10IfTrue co_await got 2001",
+                "waitOnMyInterlock10IfTrue leave",
+                "nestedWaitOnMyInterlock10IfTrue leave"}
+            );
         });
 
         it("handles two nested methods, with suspend", [] {
-            { fy(false).no_wait(); }
-            expect(logger).to.equal(vector<string>{"fy enter", "fx enter", "fx leave", "fy leave"});
+            { nestedWaitOnMyInterlock10IfTrue(false).no_wait(); }
+            expect(logger).to.equal(vector<string>{"nestedWaitOnMyInterlock10IfTrue enter", "waitOnMyInterlock10IfTrue enter", "waitOnMyInterlock10IfTrue leave", "nestedWaitOnMyInterlock10IfTrue leave"});
         });
 
         it("handles many nested methods and two suspends", [] {
@@ -214,6 +232,7 @@ kaffeeklatsch_spec([] {
             expect(logger).equals(expect);
         });
     });
+
     describe("calling from sync", [] {
         it("destroying a finished async will not throw", [] {
             { auto async = no_wait(); }
